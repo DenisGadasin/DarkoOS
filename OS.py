@@ -81,13 +81,16 @@ class DarkoOS:
         for r, d, f in os.walk(self.disk_path):
             for file in f:
                 total += os.path.getsize(os.path.join(r, file))
-        return round(total / (1024 * 1024), 2)
+        return round(total / (1024 * 1024), 2)  # in MB
 
     def get_disk_stats(self):
-        used = self.get_disk_usage()
-        total = self.disk_gb * 1024
+        used = self.get_disk_usage()  # MB
+        total = self.disk_gb * 1024  # MB
         free = total - used
-        return used, free, total
+        used_gb = used / 1024
+        free_gb = free / 1024
+        total_gb = total / 1024
+        return used_gb, free_gb, total_gb
 
     # ---------- DESKTOP ----------
     def boot_desktop(self):
@@ -103,9 +106,16 @@ class DarkoOS:
         self.info.pack(side="left", padx=10)
         self.update_stats()
 
+        tk.Button(
+            self.top, text="Shutdown",
+            bg="#630000", fg="white", bd=0,
+            command=self.root.destroy
+        ).pack(side="right", padx=10)
+
         self.desk = tk.Frame(self.root, bg="#050505")
         self.desk.pack(fill="both", expand=True)
 
+        # Default buttons
         tk.Button(
             self.desk, text="📁 Explorer",
             bg="#1A1A1A", fg="white", bd=0,
@@ -125,23 +135,68 @@ class DarkoOS:
         ).place(x=30, y=130)
 
         # Desktop context menu
-        ctx = tk.Menu(self.desk, tearoff=0)
-        ctx.add_command(label="New Folder", command=lambda: self.create_io("dir", None, self.disk_path))
-        ctx.add_command(label="New Text File", command=lambda: self.create_io("file", None, self.disk_path))
+        self.desk_ctx = tk.Menu(self.desk, tearoff=0)
+        self.desk_ctx.add_command(label="New Folder", command=lambda: self.create_io("dir", self.refresh_desktop, self.disk_path))
+        self.desk_ctx.add_command(label="New Text File", command=lambda: self.create_io("file", self.refresh_desktop, self.disk_path))
+        self.desk_ctx.add_separator()
+        self.desk_ctx.add_command(label="Refresh", command=self.refresh_desktop)
 
         def popup(e):
             try:
-                ctx.tk_popup(e.x_root, e.y_root)
+                self.desk_ctx.tk_popup(e.x_root, e.y_root)
             finally:
-                ctx.grab_release()
+                self.desk_ctx.grab_release()
 
         self.desk.bind("<Button-3>", popup)
+
+        self.icons = []
+        self.refresh_desktop()
+
+    def refresh_desktop(self):
+        # Clear existing icons except default buttons
+        for icon in self.icons:
+            icon.destroy()
+        self.icons = []
+
+        x, y = 150, 30  # Start position for custom icons
+        for i in os.listdir(self.disk_path):
+            path = os.path.join(self.disk_path, i)
+            if os.path.isdir(path):
+                icon_text = "📁 " + i
+                cmd = lambda p=path: self.open_explorer(p)
+            elif i.endswith(".drk"):
+                icon_text = "⚙ " + i
+                prog = i[:-4]
+                if prog == "cmd":
+                    cmd = self.open_terminal
+                elif prog == "explorer":
+                    cmd = self.open_explorer
+                elif prog == "calculator":
+                    cmd = self.open_calculator
+                else:
+                    cmd = lambda p=path: self.open_file_from_terminal(p)
+            else:
+                icon_text = "📄 " + i
+                cmd = lambda p=path: self.open_file_from_terminal(p)
+
+            btn = tk.Button(
+                self.desk, text=icon_text,
+                bg="#1A1A1A", fg="white", bd=0,
+                command=cmd
+            )
+            btn.place(x=x, y=y)
+            self.icons.append(btn)
+
+            y += 50
+            if y > 500:
+                y = 30
+                x += 150
 
     def update_stats(self):
         used, free, total = self.get_disk_stats()
         self.info.config(
             text=f"USER: {self.user} | RAM: {self.ram} MB | "
-                 f"STORAGE: {used} / {total} MB (Free {free} MB)"
+                 f"STORAGE: {used:.2f} / {total:.2f} GB (Free {free:.2f} GB)"
         )
         self.root.after(3000, self.update_stats)
 
@@ -155,10 +210,18 @@ class DarkoOS:
         exp.geometry("750x500")
         exp.configure(bg="#1A1A1A")
 
-        used, free, total = self.get_disk_stats()
+        used_gb, free_gb, total_gb = self.get_disk_stats()
         tk.Label(
             exp,
-            text=f"Used: {used} MB | Free: {free} MB | Total: {total} MB",
+            text=f"Disk (virtual) C: {used_gb:.2f}GB / {total_gb:.2f}GB",
+            bg="#1A1A1A",
+            fg="#00ADB5",
+            font=("Consolas", 10)
+        ).pack(fill="x")
+
+        tk.Label(
+            exp,
+            text=f"Free: {free_gb:.2f}GB",
             bg="#1A1A1A",
             fg="#00ADB5",
             font=("Consolas", 10)
@@ -199,7 +262,7 @@ class DarkoOS:
             ctx.grab_release()
 
         self.ex_list.bind("<Button-3>", popup)
-        self.ex_list.bind("<Double-1>", lambda e: self.open_item(refresh, current_dir))
+        self.ex_list.bind("<Double-1>", lambda e: self.open_item(refresh, current_dir, exp))
 
         refresh()
 
@@ -211,10 +274,11 @@ class DarkoOS:
         if t == "dir":
             os.mkdir(path)
         else:
-            with open(path + ".txt", "w", encoding="utf-8") as f:
-                f.write("")
+            open(path + ".txt", "w", encoding="utf-8").close()
         if cb:
             cb()
+        if current_dir == self.disk_path:
+            self.refresh_desktop()
 
     def delete_io(self, cb, current_dir):
         sel = self.ex_list.get(tk.ACTIVE)
@@ -228,6 +292,8 @@ class DarkoOS:
             else:
                 os.remove(path)
             cb()
+        if current_dir == self.disk_path:
+            self.refresh_desktop()
 
     def rename_io(self, cb, current_dir):
         sel = self.ex_list.get(tk.ACTIVE)
@@ -241,19 +307,22 @@ class DarkoOS:
         new_path = os.path.join(current_dir, new_name)
         os.rename(old_path, new_path)
         cb()
+        if current_dir == self.disk_path:
+            self.refresh_desktop()
 
-    def open_item(self, cb, current_dir):
+    def open_item(self, cb, current_dir, exp):
         sel = self.ex_list.get(tk.ACTIVE)
         if not sel:
             return
         if sel == "📁 ..":
             parent_dir = os.path.dirname(current_dir)
-            cb()
+            exp.destroy()
             self.open_explorer(parent_dir)
             return
         name = sel[2:]
         path = os.path.join(current_dir, name)
         if "📁" in sel:
+            exp.destroy()
             self.open_explorer(path)
         elif "⚙" in sel:
             prog = name[:-4]
@@ -280,82 +349,132 @@ class DarkoOS:
         )
         out.pack(fill="both", expand=True)
 
-        out.insert("end", "DarkoOS Terminal\nType help\n> ")
+        out.insert("end", "DarkoOS Terminal\nType 'help' for commands\n> ")
+
+        self.terminal_history = []
+        self.history_index = 0
 
         def cmd(event=None):
-            line = out.get("end-2l", "end").replace("> ", "").strip()
-            args = line.split()
-
-            if not args:
+            line = out.get("end-2l linestart", "end").strip()[2:]  # Remove '> '
+            if not line:
                 out.insert("end", "> ")
                 return "break"
 
+            self.terminal_history.append(line)
+            self.history_index = len(self.terminal_history)
+
+            args = line.split()
             c = args[0].lower()
 
             if c == "help":
-                out.insert("end",
-                    "help\nprint <text>\ndir\nstart <file>\nclear\n"
-                    "mkdir <name>\ntouch <name>\nrm <name>\n"
-                    "calc <expression>\n"
-                )
-            elif c == "print" or c == "echo":
-                out.insert("end", " ".join(args[1:]) + "\n")
+                out.insert("end", "\nAvailable commands:\n"
+                                  "help - show this list\n"
+                                  "echo <text> - print text\n"
+                                  "dir - list files\n"
+                                  "start <program> - start program (cmd, explorer, calculator, file)\n"
+                                  "clear - clear screen\n"
+                                  "mkdir <name> - create folder\n"
+                                  "touch <name> - create file\n"
+                                  "rm <name> - delete file/folder\n"
+                                  "calc <expression> - calculate\n"
+                                  "exit - close terminal\n")
+            elif c == "echo" or c == "print":
+                out.insert("end", "\n>> " + " ".join(args[1:]) + "\n")
             elif c == "dir" or c == "ls":
+                out.insert("end", "\n")
                 for f in os.listdir(self.disk_path):
                     out.insert("end", f + "\n")
             elif c == "clear" or c == "cls":
                 out.delete("1.0", "end")
                 out.insert("end", "> ")
+                return "break"
             elif c == "start" and len(args) > 1:
-                path = os.path.join(self.disk_path, args[1])
-                if os.path.exists(path):
-                    if os.path.isdir(path):
-                        out.insert("end", "Cannot start directory\n")
-                    elif path.endswith(".drk"):
-                        prog = os.path.basename(path)[:-4]
-                        if prog == "cmd":
-                            self.open_terminal()
-                        elif prog == "explorer":
-                            self.open_explorer()
-                        elif prog == "calculator":
-                            self.open_calculator()
+                target = args[1].lower()
+                if target == "cmd":
+                    self.open_terminal()
+                    out.insert("end", "\nStarted new terminal\n")
+                elif target == "explorer":
+                    self.open_explorer()
+                    out.insert("end", "\nStarted explorer\n")
+                elif target == "calculator":
+                    self.open_calculator()
+                    out.insert("end", "\nStarted calculator\n")
+                else:
+                    path = os.path.join(self.disk_path, target)
+                    if os.path.exists(path):
+                        if os.path.isdir(path):
+                            out.insert("end", "\nCannot start directory\n")
                         else:
                             self.open_file_from_terminal(path)
+                            out.insert("end", "\nOpened file\n")
                     else:
-                        self.open_file_from_terminal(path)
-                else:
-                    out.insert("end", "File not found\n")
+                        out.insert("end", "\nNot found\n")
             elif c == "mkdir" and len(args) > 1:
-                os.mkdir(os.path.join(self.disk_path, args[1]))
-                out.insert("end", "Folder created\n")
+                try:
+                    os.mkdir(os.path.join(self.disk_path, args[1]))
+                    out.insert("end", "\nFolder created\n")
+                except Exception as e:
+                    out.insert("end", f"\nError: {e}\n")
             elif c == "touch" and len(args) > 1:
-                open(os.path.join(self.disk_path, args[1]), "w").close()
-                out.insert("end", "File created\n")
+                try:
+                    open(os.path.join(self.disk_path, args[1]), "w").close()
+                    out.insert("end", "\nFile created\n")
+                except Exception as e:
+                    out.insert("end", f"\nError: {e}\n")
             elif c == "rm" and len(args) > 1:
                 path = os.path.join(self.disk_path, args[1])
                 if os.path.exists(path):
-                    if os.path.isdir(path):
-                        os.rmdir(path)
-                    else:
-                        os.remove(path)
-                    out.insert("end", "Deleted\n")
+                    try:
+                        if os.path.isdir(path):
+                            os.rmdir(path)
+                        else:
+                            os.remove(path)
+                        out.insert("end", "\nDeleted\n")
+                    except Exception as e:
+                        out.insert("end", f"\nError: {e}\n")
                 else:
-                    out.insert("end", "Not found\n")
+                    out.insert("end", "\nNot found\n")
             elif c == "calc" and len(args) > 1:
                 expression = " ".join(args[1:])
                 try:
                     result = eval(expression)
-                    out.insert("end", f"{result}\n")
+                    out.insert("end", f"\n>> {result}\n")
                 except Exception as e:
-                    out.insert("end", f"Error: {e}\n")
+                    out.insert("end", f"\nError: {e}\n")
+            elif c == "exit":
+                win.destroy()
+                return "break"
             else:
-                out.insert("end", "Unknown command\n")
+                try:
+                    result = eval(line)
+                    out.insert("end", f"\n>> {result}\n")
+                except Exception as e:
+                    out.insert("end", f"\nUnknown command or error: {e}\n")
 
             out.insert("end", "> ")
             out.see("end")
             return "break"
 
+        def arrow_up(event):
+            if self.history_index > 0:
+                self.history_index -= 1
+                out.delete("end-1l linestart+2c", "end")  # Clear current line after '> '
+                out.insert("end", self.terminal_history[self.history_index])
+            return "break"
+
+        def arrow_down(event):
+            if self.history_index < len(self.terminal_history) - 1:
+                self.history_index += 1
+                out.delete("end-1l linestart+2c", "end")
+                out.insert("end", self.terminal_history[self.history_index])
+            elif self.history_index == len(self.terminal_history) - 1:
+                self.history_index += 1
+                out.delete("end-1l linestart+2c", "end")
+            return "break"
+
         out.bind("<Return>", cmd)
+        out.bind("<Up>", arrow_up)
+        out.bind("<Down>", arrow_down)
 
     # ---------- CALCULATOR ----------
     def open_calculator(self):
@@ -408,8 +527,11 @@ class DarkoOS:
         )
         area.pack(fill="both", expand=True)
 
-        with open(path, "r", encoding="utf-8") as f:
-            area.insert("1.0", f.read())
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                area.insert("1.0", f.read())
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
 
         tk.Button(
             win, text="SAVE",
@@ -418,9 +540,12 @@ class DarkoOS:
         ).pack(fill="x")
 
     def save_file(self, path, content):
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
-        messagebox.showinfo("DarkoOS", "Saved")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+            messagebox.showinfo("DarkoOS", "Saved")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
 
 
 if __name__ == "__main__":
