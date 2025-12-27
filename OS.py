@@ -6,6 +6,12 @@ import os
 import sys
 import urllib.request
 
+try:
+    from tkhtmlview import HTMLLabel
+except ImportError:
+    messagebox.showerror("Error", "tkhtmlview not found. Install with 'pip install tkhtmlview'")
+    sys.exit(1)
+
 # Import config
 try:
     from config import user, passw, ram, disk_gb
@@ -542,24 +548,27 @@ class DarkoOS:
 
         self.url_entry = tk.Entry(frame, bg="#0A0A0A", fg="white", font=("Arial", 14), bd=0, width=50)
         self.url_entry.pack(side="left", padx=10, pady=5, fill="x", expand=True)
-        self.url_entry.insert(0, "http://")
+        self.url_entry.insert(0, "https://www.google.com")
 
         tk.Button(frame, text="Go", bg="#00ADB5", fg="black", bd=0,
                   command=self.load_page).pack(side="right", padx=10)
 
-        self.browser_out = scrolledtext.ScrolledText(
-            win, bg="white", fg="black",
-            font=("Consolas", 10)
-        )
-        self.browser_out.pack(fill="both", expand=True)
+        self.browser_content = tk.Frame(win)
+        self.browser_content.pack(fill="both", expand=True)
+
+        self.load_page()  # Load initial page
 
     def load_page(self):
         url = self.url_entry.get()
         try:
             with urllib.request.urlopen(url) as response:
                 content = response.read().decode('utf-8')
-                self.browser_out.delete("1.0", "end")
-                self.browser_out.insert("end", content)
+
+            for widget in self.browser_content.winfo_children():
+                widget.destroy()
+
+            html_label = HTMLLabel(self.browser_content, html=content)
+            html_label.pack(fill="both", expand=True)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load page: {e}")
 
