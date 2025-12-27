@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext, simpledialog
 import os
 import sys
+import urllib.request
 
 # Import config
 try:
@@ -134,6 +135,12 @@ class DarkoOS:
             command=self.open_calculator
         ).place(x=30, y=130)
 
+        tk.Button(
+            self.desk, text="🌐 Browser",
+            bg="#1A1A1A", fg="white", bd=0,
+            command=self.open_browser
+        ).place(x=30, y=180)
+
         # Desktop context menu
         self.desk_ctx = tk.Menu(self.desk, tearoff=0)
         self.desk_ctx.add_command(label="New Folder", command=lambda: self.create_io("dir", self.refresh_desktop, self.disk_path))
@@ -173,6 +180,8 @@ class DarkoOS:
                     cmd = self.open_explorer
                 elif prog == "calculator":
                     cmd = self.open_calculator
+                elif prog == "browser":
+                    cmd = self.open_browser
                 else:
                     cmd = lambda p=path: self.open_file_from_terminal(p)
             else:
@@ -332,6 +341,8 @@ class DarkoOS:
                 self.open_explorer()
             elif prog == "calculator":
                 self.open_calculator()
+            elif prog == "browser":
+                self.open_browser()
             else:
                 self.open_file_from_terminal(path)
         else:
@@ -371,7 +382,7 @@ class DarkoOS:
                                   "help - show this list\n"
                                   "echo <text> - print text\n"
                                   "dir - list files\n"
-                                  "start <program> - start program (cmd, explorer, calculator, file)\n"
+                                  "start <program> - start program (cmd, explorer, calculator, browser, file)\n"
                                   "clear - clear screen\n"
                                   "mkdir <name> - create folder\n"
                                   "touch <name> - create file\n"
@@ -399,6 +410,9 @@ class DarkoOS:
                 elif target == "calculator":
                     self.open_calculator()
                     out.insert("end", "\nStarted calculator\n")
+                elif target == "browser":
+                    self.open_browser()
+                    out.insert("end", "\nStarted browser\n")
                 else:
                     path = os.path.join(self.disk_path, target)
                     if os.path.exists(path):
@@ -516,6 +530,38 @@ class DarkoOS:
 
     def calc_clear(self):
         self.calc_entry.delete(0, tk.END)
+
+    # ---------- BROWSER ----------
+    def open_browser(self):
+        win = tk.Toplevel(self.root)
+        win.title("Browser")
+        win.geometry("800x600")
+
+        frame = tk.Frame(win, bg="#1A1A1A")
+        frame.pack(fill="x")
+
+        self.url_entry = tk.Entry(frame, bg="#0A0A0A", fg="white", font=("Arial", 14), bd=0, width=50)
+        self.url_entry.pack(side="left", padx=10, pady=5, fill="x", expand=True)
+        self.url_entry.insert(0, "http://")
+
+        tk.Button(frame, text="Go", bg="#00ADB5", fg="black", bd=0,
+                  command=self.load_page).pack(side="right", padx=10)
+
+        self.browser_out = scrolledtext.ScrolledText(
+            win, bg="white", fg="black",
+            font=("Consolas", 10)
+        )
+        self.browser_out.pack(fill="both", expand=True)
+
+    def load_page(self):
+        url = self.url_entry.get()
+        try:
+            with urllib.request.urlopen(url) as response:
+                content = response.read().decode('utf-8')
+                self.browser_out.delete("1.0", "end")
+                self.browser_out.insert("end", content)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load page: {e}")
 
     def open_file_from_terminal(self, path):
         win = tk.Toplevel(self.root)
